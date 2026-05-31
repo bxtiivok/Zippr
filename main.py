@@ -123,7 +123,7 @@ args['outpath'] = args['outpath'].resolve()
 
 # Filtering
 
-def filter():
+def filter() -> list[Path]:
 
     # Collecting
     
@@ -155,26 +155,27 @@ def filter():
                 m = m.resolve()
                 
                 if m.is_file():
-                    files.remove(m)
+                    if m in files:
+                        files.remove(m)
                     continue    
                 if not m.is_dir():
                     continue
                 
                 for r in files.copy():
-                    if not r.is_relative_to(m):
+                    if (r not in files) or (not r.is_relative_to(m)):
                         continue
                     files.remove(r)
-        
-        return files
+    
+    return files
 
 files = filter()
 
 # Archiving
 
-with ZipFile(args['outpath'], "w", compression=ZIP_DEFLATED, compresslevel=args['compression']) as zip:
+with ZipFile(args['outpath'], "w", compression=ZIP_DEFLATED, compresslevel=args['compression']) as z:
     
     for f in files:
-        zip.write(f, f.relative_to(args['inpath'].parent))
+        z.write(f, f.relative_to(args['inpath'].parent))
     
     if args['remove']:
         remove(args['inpath'])
