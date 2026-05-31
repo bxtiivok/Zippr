@@ -1,24 +1,38 @@
-# Imports
+## Imports
 
 from zipfile import ZipFile, ZIP_DEFLATED
-from argparse import ArgumentParser, HelpFormatter
+from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from pathlib import Path
-from typing import Iterator, TypedDict
-from glob import glob
-from os import getcwd
-from sys import version_info, exit
+from typing import TypedDict
+from os import remove
+from sys import version_info
 from modules.palette import Palette
 
-# Main
+## Main
 
-ver = [0, 0, 0]
+ver = [1, 0, 0]
 
-parser = ArgumentParser("zippr",
+class Formatter(RawDescriptionHelpFormatter):
+
+    def __init__(self, prog, indent_increment=4, max_help_position=40, width=None, color=True):
+        super().__init__(prog, indent_increment, max_help_position, width, color)
+
+parser = ArgumentParser("Zippr",
     usage=f"{Palette.bold}{Palette.magenta}zippr{Palette.reset} {Palette.green}<folderpath>{Palette.reset} [{Palette.green}options{Palette.reset}]",
-    description="Creates a .zip archive, that excludes items listed in .zipignore files",
+    description=
+    """
+    Creates a .zip archive, excluding items listed inside .zipignore files.
+
+    .zipignore files behave the same way .gitignore files do: they allow you to
+    filter out certain folders or files, making sure files you wouldn't share
+    with others 
+    """.replace("    ", ""),
     add_help=False,
-    formatter_class=lambda prog: HelpFormatter(prog, max_help_position=40)
+    formatter_class=Formatter
+    
 )
+
+# Arguments
 
 parser.add_argument(
     "-h, --help",
@@ -27,15 +41,15 @@ parser.add_argument(
 )
 parser.add_argument(
     "-v", "--version",
-    help="Prints the version of Zippr",
+    help="Prints the version of the program",
     action="version",
-    version=f"Zippr v{ver[0]}.{ver[1]}{'.' + str(ver[2]) if ver[2] != 0 else ''} on Python {version_info.major}.{version_info.minor}.{version_info.micro}",
+    version=f"%(prog)s v{ver[0]}.{ver[1]}{'.' + str(ver[2]) if ver[2] != 0 else ''} on Python {version_info.major}.{version_info.minor}.{version_info.micro}",
 )
 parser.add_argument(
     "inpath",
     help="The relative or absolute path to a folder",
     metavar="<folderpath>",
-    type=Path
+    type=Path,
 )
 parser.add_argument(
     "-o", "--out",
@@ -43,7 +57,7 @@ parser.add_argument(
     help="The output path (default: <folderpath>.zip)",
     metavar="<filepath>",
     default=None,
-    type=Path
+    type=Path,
 )
 parser.add_argument(
     "-f", "--force",
@@ -58,23 +72,18 @@ parser.add_argument(
     type=int,
 )
 parser.add_argument(
-    "-i", "--inclusive",
-    help="Includes hidden files",
-    action="store_true",
-)
-parser.add_argument(
     "-n", "--no-ignore",
-    help="Doesn't parse .zipignore files",
+    help="Don't parse .zipignore files",
     action="store_true",
 )
 parser.add_argument(
     "-g", "--git-ignore",
-    help="Parses .gitignore files aswell",
+    help="Parse .gitignore files too",
     action="store_true",
 )
 parser.add_argument(
-    "-q", "--quiet",
-    help="Hides the output instead of printing it",
+    "-r", "--remove",
+    help="Remove the folder after creating the archive",
     action="store_true",
 )
 
@@ -83,24 +92,89 @@ class Args(TypedDict):
     outpath: Path
     force: bool
     compression: int
-    inclusive: bool
     no_ignore: bool
     git_ignore: bool
-    quiet: bool
+    remove: bool
 
 args: Args = vars(parser.parse_args())
 
+# Checks & Resolves
+
+args['inpath'] = args['inpath'].resolve()
+
 if not args['inpath'].is_dir():
-    parser.error(f"argument 1: invalid Path value: {str(args['inpath'])!r}")
+    parser.error(f"argument 1: path '{str(args['inpath'])}' doesn't point to a folder")
+
+if not (0 <= args["compression"] <= 9):
+    parser.error(f"argument -c/--compression: int value '{args['compression']}' out of range 0-9")
 
 if args['outpath'] is None:
-    args['outpath'] = Path(f"{args['inpath'].name}.zip")
+    args['outpath'] = args['inpath'].parent / f"{args['inpath'].name}.zip"
+elif args['outpath'].is_dir():
+    args['outpath'] = args['outpath'] / f"{args['inpath'].name}.zip"
 
-print(f"{Palette.magenta}args{Palette.reset}", str(args)
-    .replace("{", f"{{\n    {Palette.green}",)
-    .replace("}", f"\n{Palette.reset}}}")
-    .replace(": ", f"{Palette.reset}: {Palette.red}")
-    .replace(", ", f"{Palette.reset},\n    {Palette.green}")
-    .replace("(", f"{Palette.reset}<{Palette.green}")
-    .replace(")", f"{Palette.reset}>")
-)
+if args['outpath'].exists() and not args['force']:
+    parser.error(f"argument -o/--out: file '{str(args['outpath'])}' already exists")
+
+if not args['outpath'].name.endswith(".zip"):
+    args['outpath'] = args['outpath'].with_name(args['outpath'].name + ".zip")
+
+args['outpath'] = args['outpath'].resolve()
+
+# Filtering
+
+def filter():
+
+    # Collecting
+    
+    total = [f.resolve() for f in args['inpath'].rglob("*")]
+    files = total.copy()
+    
+    for f in total:
+
+        # Filter .zipignores & .gitignores (if enabled)
+
+        if (not f.is_file()):
+            continue
+        if ((args['no_ignore']) or not f.name.endswith(".zipignore")) and ((not args['git_ignore']) or (not f.name.endswith(".gitignore"))):
+            continue
+
+        # Patterns
+
+        root = f.parent
+        lines = []
+        for line in f.read_text().splitlines():
+            if line.startswith("#") or (line.strip() == ""):
+                continue
+            lines.append(line.strip())
+        
+        # Remove matched files & folders
+
+        for line in lines:
+            for m in root.rglob(line):
+                m = m.resolve()
+                
+                if m.is_file():
+                    files.remove(m)
+                    continue    
+                if not m.is_dir():
+                    continue
+                
+                for r in files.copy():
+                    if not r.is_relative_to(m):
+                        continue
+                    files.remove(r)
+
+files = filter()
+
+# Archiving
+
+with ZipFile(args['outpath'], "w", compression=ZIP_DEFLATED, compresslevel=args['compression']) as zip:
+    
+    for f in files:
+        zip.write(f)
+    
+    if args['remove']:
+        remove(args['inpath'])
+
+# :3
