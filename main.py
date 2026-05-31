@@ -164,6 +164,8 @@ def filter():
                     if not r.is_relative_to(m):
                         continue
                     files.remove(r)
+        
+        return files
 
 files = filter()
 
