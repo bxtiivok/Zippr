@@ -10,7 +10,7 @@ from modules.palette import Palette
 
 ## Main
 
-ver = [1, 0, 0]
+ver = [1, 0, 1]
 
 class Formatter(RawDescriptionHelpFormatter):
 
@@ -35,7 +35,7 @@ parser = ArgumentParser("Zippr",
 # Arguments
 
 parser.add_argument(
-    "-h, --help",
+    "-h", "--help",
     help="Prints this help message",
     action="help",
 )
@@ -174,7 +174,7 @@ files = filter()
 with ZipFile(args['outpath'], "w", compression=ZIP_DEFLATED, compresslevel=args['compression']) as zip:
     
     for f in files:
-        zip.write(f)
+        zip.write(f, f.relative_to(args['inpath'].parent))
     
     if args['remove']:
         remove(args['inpath'])
