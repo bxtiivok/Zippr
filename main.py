@@ -23,13 +23,13 @@ parser = ArgumentParser("Zippr",
     """
     Creates a .zip archive, excluding items listed inside .zipignore files.
 
-    .zipignore files behave the same way .gitignore files do: they allow you to
-    filter out certain folders or files, making sure files you wouldn't share
-    with others 
+    .zipignore files allow you to filter out certain folders or files, making
+    sure you don't accidently archive and share useless stuff, files containing
+    sensitive data, or any other thing you may not want to include in your archives
     """.replace("    ", ""),
     add_help=False,
-    formatter_class=Formatter
-    
+    allow_abbrev=False,
+    formatter_class=Formatter,
 )
 
 # Arguments
